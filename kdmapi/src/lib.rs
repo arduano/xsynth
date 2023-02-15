@@ -39,15 +39,15 @@ struct Synth {
 }
 
 static mut GLOBAL_SYNTH: Option<Synth> = None;
+static mut SOUNDFONTS: Option<Vec<Arc<dyn SoundfontBase>>> = None;
 static mut CURRENT_VOICE_COUNT: u64 = 0;
 
-// region: Custom xsynth KDMAPI functions
+// region: Custom KDMAPI functions
 
 #[no_mangle]
-pub extern "C" fn GetVoiceCount() -> u64 //This entire function is custom to xsynth and is not part of the kdmapi standard. Its basically just for testing
+pub extern "C" fn GetVoiceCount() -> u64 // This function is not part of the KDMAPI standard.
 {
     unsafe {
-        //println!("Voice Count: {}", voice_count);
         CURRENT_VOICE_COUNT
     }
 }
@@ -113,15 +113,11 @@ pub extern "C" fn TerminateKDMAPIStream() -> i32 {
             synth.stats_join_handle.join().ok();
         }
     }
-    println!("TerminateKDMAPIStream");
-    //std::process::exit(0) //Currently a workaround for chikara not closing
     1
 }
 
 #[no_mangle]
 pub extern "C" fn ResetKDMAPIStream() {
-    println!("ResetKDMAPIStream");
-    //Just terminate and reinitialize
     TerminateKDMAPIStream();
     InitializeKDMAPIStream();
 }
@@ -144,8 +140,7 @@ pub extern "C" fn SendDirectDataNoBuf(dwMsg: u32) -> u32 {
 
 #[no_mangle]
 pub extern "C" fn IsKDMAPIAvailable() -> u32 {
-    println!("IsKDMAPIAvailable");
-    1 //Yes, we are available
+    1
 }
 
 // endregion
