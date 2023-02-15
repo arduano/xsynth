@@ -6,10 +6,12 @@ use std::{
     sync::{Arc, Mutex},
     thread,
     time::Duration,
+    path::PathBuf,
+    collections::HashMap,
 };
 
 use core::{
-    channel::ChannelConfigEvent,
+    channel::{ChannelConfigEvent, ChannelInitOptions},
     soundfont::{SampleSoundfont, SoundfontBase},
 };
 
@@ -28,6 +30,9 @@ use winapi::{
     },
 };
 
+mod sf_list;
+pub use sf_list::*;
+
 struct Synth {
     killed: Arc<Mutex<bool>>,
     stats_join_handle: thread::JoinHandle<()>,
@@ -39,46 +44,62 @@ struct Synth {
 }
 
 static mut GLOBAL_SYNTH: Option<Synth> = None;
-static mut SOUNDFONTS: Option<Vec<Arc<dyn SoundfontBase>>> = None;
+static mut SOUNDFONTS: Option<HashMap<PathBuf, Arc<SampleSoundfont>>> = None;
 static mut CURRENT_VOICE_COUNT: u64 = 0;
 
 // region: Custom KDMAPI functions
 
+// This function is not part of the KDMAPI standard.
 #[no_mangle]
-pub extern "C" fn GetVoiceCount() -> u64 // This function is not part of the KDMAPI standard.
+pub extern "C" fn GetVoiceCount() -> u64
 {
     unsafe {
         CURRENT_VOICE_COUNT
     }
 }
-
 // endregion
 
 // region: KDMAPI functions
 
 #[no_mangle]
 pub extern "C" fn InitializeKDMAPIStream() -> i32 {
+    let channel_init_options = ChannelInitOptions {
+        fade_out_killing: true,
+        ..Default::default()
+    };
+
     let config = XSynthRealtimeConfig {
         render_window_ms: 5.0,
-        use_threadpool: true,
+        channel_init_options,
         ..Default::default()
     };
 
     let realtime_synth = RealtimeSynth::open_with_default_output(config);
     let mut sender = realtime_synth.get_senders();
-
     let params = realtime_synth.stream_params();
 
-    let soundfonts: Vec<Arc<dyn SoundfontBase>> = vec![Arc::new(
-    SampleSoundfont::new(
-      "E:/Midis/Soundfonts/Loud and Proud Remastered/Kaydax Presets/Loud and Proud Remastered (Realistic).sfz",
-      params,
-      Default::default(),
-    )
-    .unwrap(),
-  )];
+    let soundfonts: HashMap<PathBuf, Arc<SampleSoundfont>> = if let Some(soundfonts) = unsafe{ SOUNDFONTS.clone() } {
+        soundfonts
+    } else {
+        let sfpaths = parse_list().unwrap_or(Vec::new());
+        let mut soundfonts = HashMap::new();
+        for path in sfpaths {
+            let soundfont = Arc::new(SampleSoundfont::new(path.clone(), params, Default::default()).unwrap());
+            if !soundfonts.contains_key(&path) {
+                soundfonts.insert(path, soundfont);
+            }
+        }
+        unsafe {
+            SOUNDFONTS = Some(soundfonts.clone());
+        }
+        soundfonts
+    };
 
-    sender.send_config(ChannelConfigEvent::SetSoundfonts(soundfonts));
+    let mut sfs: Vec<Arc<dyn SoundfontBase>> = Vec::new();
+    for soundfont in &soundfonts {
+        sfs.push(soundfont.1.clone());
+    }
+    sender.send_config(ChannelConfigEvent::SetSoundfonts(sfs));
 
     let killed = Arc::new(Mutex::new(false));
 

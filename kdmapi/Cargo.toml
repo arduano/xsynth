@@ -14,3 +14,5 @@ core = { path = "../core", package = "xsynth-core" }
 realtime = { path = "../realtime", package = "xsynth-realtime" }
 winapi = { version = "0.3.9", features = ["synchapi", "winuser"] }
 cfg-if = "1.0.0"
+directories = "4.0.1"
+lazy-regex = "2.4.1"
