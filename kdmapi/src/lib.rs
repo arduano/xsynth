@@ -3,16 +3,15 @@
 use std::{
     ffi::c_void,
     os::raw::c_ulong,
+    path::Path,
     sync::{Arc, Mutex},
     thread,
     time::Duration,
-    path::PathBuf,
-    collections::HashMap,
 };
 
 use core::{
     channel::{ChannelConfigEvent, ChannelInitOptions},
-    soundfont::{SampleSoundfont, SoundfontBase},
+    soundfont::{SampleSoundfont, SoundfontBase, SoundfontInitOptions},
 };
 
 use realtime::{config::XSynthRealtimeConfig, RealtimeEventSender, RealtimeSynth};
@@ -30,8 +29,8 @@ use winapi::{
     },
 };
 
-mod sf_list;
-pub use sf_list::*;
+mod config;
+pub use config::KDMAPISettings;
 
 struct Synth {
     killed: Arc<Mutex<bool>>,
@@ -44,18 +43,14 @@ struct Synth {
 }
 
 static mut GLOBAL_SYNTH: Option<Synth> = None;
-static mut SOUNDFONTS: Option<HashMap<PathBuf, Arc<SampleSoundfont>>> = None;
 static mut CURRENT_VOICE_COUNT: u64 = 0;
 
 // region: Custom KDMAPI functions
 
 // This function is not part of the KDMAPI standard.
 #[no_mangle]
-pub extern "C" fn GetVoiceCount() -> u64
-{
-    unsafe {
-        CURRENT_VOICE_COUNT
-    }
+pub extern "C" fn GetVoiceCount() -> u64 {
+    unsafe { CURRENT_VOICE_COUNT }
 }
 // endregion
 
@@ -63,14 +58,18 @@ pub extern "C" fn GetVoiceCount() -> u64
 
 #[no_mangle]
 pub extern "C" fn InitializeKDMAPIStream() -> i32 {
+    let settings = KDMAPISettings::new_or_load();
+
     let channel_init_options = ChannelInitOptions {
-        fade_out_killing: true,
+        fade_out_killing: settings.fade_out_kill,
         ..Default::default()
     };
 
     let config = XSynthRealtimeConfig {
-        render_window_ms: 5.0,
+        render_window_ms: settings.buffer_ms,
+        use_threadpool: settings.use_threadpool,
         channel_init_options,
+        ignore_range: settings.vel_ignore,
         ..Default::default()
     };
 
@@ -78,28 +77,29 @@ pub extern "C" fn InitializeKDMAPIStream() -> i32 {
     let mut sender = realtime_synth.get_senders();
     let params = realtime_synth.stream_params();
 
-    let soundfonts: HashMap<PathBuf, Arc<SampleSoundfont>> = if let Some(soundfonts) = unsafe{ SOUNDFONTS.clone() } {
-        soundfonts
-    } else {
-        let sfpaths = parse_list().unwrap_or(Vec::new());
-        let mut soundfonts = HashMap::new();
-        for path in sfpaths {
-            let soundfont = Arc::new(SampleSoundfont::new(path.clone(), params, Default::default()).unwrap());
-            if !soundfonts.contains_key(&path) {
-                soundfonts.insert(path, soundfont);
-            }
-        }
-        unsafe {
-            SOUNDFONTS = Some(soundfonts.clone());
-        }
-        soundfonts
-    };
+    if !settings.sfz_path.is_empty() && Path::new(&settings.sfz_path).exists() {
+        let soundfonts: Vec<Arc<dyn SoundfontBase>> = vec![Arc::new(
+            SampleSoundfont::new(
+                settings.sfz_path,
+                params,
+                SoundfontInitOptions {
+                    linear_release: settings.linear_envelope,
+                    use_effects: settings.use_effects,
+                },
+            )
+            .unwrap(),
+        )];
 
-    let mut sfs: Vec<Arc<dyn SoundfontBase>> = Vec::new();
-    for soundfont in &soundfonts {
-        sfs.push(soundfont.1.clone());
+        sender.send_config(ChannelConfigEvent::SetSoundfonts(soundfonts));
     }
-    sender.send_config(ChannelConfigEvent::SetSoundfonts(sfs));
+
+    if settings.limit_layers {
+        sender.send_config(ChannelConfigEvent::SetLayerCount(Some(
+            settings.layer_count,
+        )));
+    } else {
+        sender.send_config(ChannelConfigEvent::SetLayerCount(None));
+    }
 
     let killed = Arc::new(Mutex::new(false));
 

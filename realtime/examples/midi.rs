@@ -17,7 +17,7 @@ use midi_toolkit::{
         unwrap_items, TimeCaster,
     },
 };
-use xsynth_realtime::{RealtimeSynth, SynthEvent};
+use xsynth_realtime::{config::XSynthRealtimeConfig, RealtimeSynth, SynthEvent};
 
 fn main() {
     let args = std::env::args().collect::<Vec<String>>();
@@ -33,7 +33,13 @@ fn main() {
         return;
     };
 
-    let synth = RealtimeSynth::open_with_all_defaults();
+    let config = XSynthRealtimeConfig {
+        render_window_ms: 0.5,
+        use_threadpool: true,
+        ..Default::default()
+    };
+
+    let synth = RealtimeSynth::open_with_default_output(config);
     let mut sender = synth.get_senders();
 
     let params = synth.stream_params();
@@ -45,6 +51,7 @@ fn main() {
     println!("Loaded");
 
     sender.send_config(ChannelConfigEvent::SetSoundfonts(soundfonts));
+    sender.send_config(ChannelConfigEvent::SetLayerCount(Some(8)));
 
     let stats = synth.get_stats();
     thread::spawn(move || loop {
