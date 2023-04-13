@@ -8,3 +8,12 @@ pub enum FilterType {
     HighPass,
     BandPass,
 }
+
+#[derive(Debug, PartialEq, Clone, Copy, Default)]
+pub enum LoopMode {
+    #[default]
+    NoLoop,
+    OneShot,
+    LoopContinuous,
+    LoopSustain,
+}

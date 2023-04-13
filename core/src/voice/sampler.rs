@@ -2,6 +2,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use simdeez::prelude::*;
 
+use crate::soundfont::LoopParams;
 use crate::voice::{ReleaseType, VoiceControlData};
 
 use super::{SIMDSampleMono, SIMDSampleStereo, SIMDVoiceGenerator, VoiceGeneratorBase};
@@ -33,9 +34,11 @@ pub trait SIMDSampleGrabber<S: Simd>: Send + Sync {
     /// Indexes: the rounded index of the sample
     ///
     /// Fractional: The fractional part of the index, i.e. the 0-1 range decimal
-    fn get(&self, indexes: S::Vi32, fractional: S::Vf32) -> S::Vf32;
+    fn get(&mut self, indexes: S::Vi32, fractional: S::Vf32) -> S::Vf32;
 
     fn is_past_end(&self, pos: f64) -> bool;
+
+    fn signal_release(&mut self);
 }
 
 // F32 sampler
@@ -86,51 +89,159 @@ impl BufferSampler for BufferSamplers {
 
 // Enum sampler reader
 
-pub struct SampleReader<Sampler: BufferSampler> {
-    buffer: Sampler,
-    length: Option<usize>,
-    // TODO: add start/end/loop points
+pub trait SampleReader: Send + Sync {
+    fn get(&mut self, pos: usize) -> f32;
+    fn is_past_end(&self, pos: usize) -> bool;
+    fn signal_release(&mut self);
 }
 
-impl<Sampler: BufferSampler> SampleReader<Sampler> {
-    pub fn new(buffer: Sampler) -> Self {
+pub struct SampleReaderNoLoop<Sampler: BufferSampler> {
+    buffer: Sampler,
+    length: Option<usize>,
+    offset: usize,
+}
+
+impl<Sampler: BufferSampler> SampleReaderNoLoop<Sampler> {
+    pub fn new(buffer: Sampler, loop_params: LoopParams) -> Self {
         let length = Some(buffer.length());
-        SampleReader { buffer, length }
+        Self {
+            buffer,
+            length,
+            offset: loop_params.offset as usize,
+        }
+    }
+}
+
+impl<Sampler: BufferSampler> SampleReader for SampleReaderNoLoop<Sampler> {
+    fn get(&mut self, pos: usize) -> f32 {
+        self.buffer.get(pos + self.offset)
     }
 
-    pub fn get(&self, pos: usize) -> f32 {
+    fn is_past_end(&self, pos: usize) -> bool {
+        if let Some(len) = self.length {
+            pos - self.offset >= len
+        } else {
+            false
+        }
+    }
+
+    fn signal_release(&mut self) {}
+}
+
+pub struct SampleReaderLoop<Sampler: BufferSampler> {
+    buffer: Sampler,
+    offset: usize,
+    loop_start: usize,
+    loop_end: usize,
+}
+
+impl<Sampler: BufferSampler> SampleReaderLoop<Sampler> {
+    pub fn new(buffer: Sampler, loop_params: LoopParams) -> Self {
+        Self {
+            buffer,
+            offset: loop_params.offset as usize,
+            loop_start: loop_params.start as usize,
+            loop_end: loop_params.end as usize,
+        }
+    }
+}
+
+impl<Sampler: BufferSampler> SampleReader for SampleReaderLoop<Sampler> {
+    fn get(&mut self, pos: usize) -> f32 {
+        let mut pos = pos + self.offset;
+        let end = self.loop_end;
+        let start = self.loop_start;
+
+        if pos > end {
+            pos = (pos - end - 1) % (end - start) + start;
+        }
+
+        self.buffer.get(pos)
+    }
+
+    fn is_past_end(&self, _pos: usize) -> bool {
+        false
+    }
+
+    fn signal_release(&mut self) {}
+}
+
+pub struct SampleReaderLoopSustain<Sampler: BufferSampler> {
+    buffer: Sampler,
+    length: Option<usize>,
+    offset: usize,
+    loop_start: usize,
+    loop_end: usize,
+    last: usize,
+    is_released: bool,
+}
+
+impl<Sampler: BufferSampler> SampleReaderLoopSustain<Sampler> {
+    pub fn new(buffer: Sampler, loop_params: LoopParams) -> Self {
+        let length = Some(buffer.length());
+        Self {
+            buffer,
+            length,
+            offset: loop_params.offset as usize,
+            loop_start: loop_params.start as usize,
+            loop_end: loop_params.end as usize,
+            last: 0,
+            is_released: false,
+        }
+    }
+}
+
+impl<Sampler: BufferSampler> SampleReader for SampleReaderLoopSustain<Sampler> {
+    fn get(&mut self, pos: usize) -> f32 {
+        let mut pos = pos + self.offset;
+        let end = self.loop_end;
+        let start = self.loop_start;
+
+        if !self.is_released {
+            self.last = pos;
+            if pos > end {
+                pos = (pos - end - 1) % (end - start) + start;
+            }
+        } else {
+            pos = pos - self.last + self.loop_end;
+        }
+
         self.buffer.get(pos)
     }
 
     fn is_past_end(&self, pos: usize) -> bool {
         if let Some(len) = self.length {
-            pos >= len
+            pos - self.last - self.offset >= len
         } else {
             false
         }
+    }
+
+    fn signal_release(&mut self) {
+        self.is_released = true;
     }
 }
 
 // Sample grabbers enum
 
-pub enum SIMDSampleGrabbers<S: Simd, Sampler: BufferSampler> {
-    Nearest(SIMDNearestSampleGrabber<S, Sampler>),
-    Linear(SIMDLinearSampleGrabber<S, Sampler>),
+pub enum SIMDSampleGrabbers<S: Simd, Reader: SampleReader> {
+    Nearest(SIMDNearestSampleGrabber<S, Reader>),
+    Linear(SIMDLinearSampleGrabber<S, Reader>),
 }
 
-impl<S: Simd, Sampler: BufferSampler> SIMDSampleGrabbers<S, Sampler> {
-    pub fn nearest(reader: SampleReader<Sampler>) -> Self {
+impl<S: Simd, Reader: SampleReader> SIMDSampleGrabbers<S, Reader> {
+    pub fn nearest(reader: Reader) -> Self {
         SIMDSampleGrabbers::Nearest(SIMDNearestSampleGrabber::new(reader))
     }
 
-    pub fn linear(reader: SampleReader<Sampler>) -> Self {
+    pub fn linear(reader: Reader) -> Self {
         SIMDSampleGrabbers::Linear(SIMDLinearSampleGrabber::new(reader))
     }
 }
 
-impl<S: Simd, Sampler: BufferSampler> SIMDSampleGrabber<S> for SIMDSampleGrabbers<S, Sampler> {
+impl<S: Simd, Reader: SampleReader> SIMDSampleGrabber<S> for SIMDSampleGrabbers<S, Reader> {
     #[inline(always)]
-    fn get(&self, indexes: S::Vi32, fractional: S::Vf32) -> S::Vf32 {
+    fn get(&mut self, indexes: S::Vi32, fractional: S::Vf32) -> S::Vf32 {
         match self {
             SIMDSampleGrabbers::Linear(grabber) => grabber.get(indexes, fractional),
             SIMDSampleGrabbers::Nearest(grabber) => grabber.get(indexes, fractional),
@@ -142,6 +253,14 @@ impl<S: Simd, Sampler: BufferSampler> SIMDSampleGrabber<S> for SIMDSampleGrabber
         match self {
             SIMDSampleGrabbers::Linear(grabber) => grabber.is_past_end(pos),
             SIMDSampleGrabbers::Nearest(grabber) => grabber.is_past_end(pos),
+        }
+    }
+
+    #[inline(always)]
+    fn signal_release(&mut self) {
+        match self {
+            SIMDSampleGrabbers::Linear(grabber) => grabber.signal_release(),
+            SIMDSampleGrabbers::Nearest(grabber) => grabber.signal_release(),
         }
     }
 }
@@ -201,6 +320,8 @@ where
     #[inline(always)]
     fn signal_release(&mut self, rel_type: ReleaseType) {
         self.pitch_gen.signal_release(rel_type);
+        self.grabber_left.signal_release();
+        self.grabber_right.signal_release();
     }
 
     #[inline(always)]

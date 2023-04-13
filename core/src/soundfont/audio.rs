@@ -37,10 +37,12 @@ fn resample_vecs(vecs: Vec<Vec<f32>>, sample_rate: f32, new_sample_rate: f32) ->
         .collect()
 }
 
+type ProcessedSample = (Arc<[Arc<[f32]>]>, u32);
+
 pub fn load_audio_file(
     path: &PathBuf,
     new_sample_rate: f32,
-) -> Result<Arc<[Arc<[f32]>]>, AudioLoadError> {
+) -> Result<ProcessedSample, AudioLoadError> {
     let extension = path.extension().and_then(|ext| ext.to_str());
 
     let file = Box::new(File::open(path)?);
@@ -120,12 +122,15 @@ pub fn load_audio_file(
 
     let built = builder.finish(sample_rate as f32, new_sample_rate);
 
-    Ok(match channel_count_value {
-        ChannelCount::Mono => vec![built[0].clone(), built[0].clone()]
-            .into_iter()
-            .collect(),
-        ChannelCount::Stereo => built,
-    })
+    Ok((
+        match channel_count_value {
+            ChannelCount::Mono => vec![built[0].clone(), built[0].clone()]
+                .into_iter()
+                .collect(),
+            ChannelCount::Stereo => built,
+        },
+        sample_rate,
+    ))
 }
 
 struct BuilderVecs {

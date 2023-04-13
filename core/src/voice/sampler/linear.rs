@@ -2,15 +2,15 @@ use std::marker::PhantomData;
 
 use simdeez::prelude::*;
 
-use super::{BufferSampler, SIMDSampleGrabber, SampleReader};
+use super::{SIMDSampleGrabber, SampleReader};
 
-pub struct SIMDLinearSampleGrabber<S: Simd, Sampler: BufferSampler> {
-    sampler_reader: SampleReader<Sampler>,
+pub struct SIMDLinearSampleGrabber<S: Simd, Reader: SampleReader> {
+    sampler_reader: Reader,
     _s: PhantomData<S>,
 }
 
-impl<S: Simd, Sampler: BufferSampler> SIMDLinearSampleGrabber<S, Sampler> {
-    pub fn new(sampler_reader: SampleReader<Sampler>) -> Self {
+impl<S: Simd, Reader: SampleReader> SIMDLinearSampleGrabber<S, Reader> {
+    pub fn new(sampler_reader: Reader) -> Self {
         SIMDLinearSampleGrabber {
             sampler_reader,
             _s: PhantomData,
@@ -18,8 +18,8 @@ impl<S: Simd, Sampler: BufferSampler> SIMDLinearSampleGrabber<S, Sampler> {
     }
 }
 
-impl<S: Simd, Sampler: BufferSampler> SIMDSampleGrabber<S> for SIMDLinearSampleGrabber<S, Sampler> {
-    fn get(&self, indexes: S::Vi32, fractional: S::Vf32) -> S::Vf32 {
+impl<S: Simd, Reader: SampleReader> SIMDSampleGrabber<S> for SIMDLinearSampleGrabber<S, Reader> {
+    fn get(&mut self, indexes: S::Vi32, fractional: S::Vf32) -> S::Vf32 {
         simd_invoke!(S, {
             let ones = unsafe { S::Vf32::set1(1.0f32) };
             let blend = fractional;
@@ -41,5 +41,9 @@ impl<S: Simd, Sampler: BufferSampler> SIMDSampleGrabber<S> for SIMDLinearSampleG
     fn is_past_end(&self, pos: f64) -> bool {
         let pos = pos as usize;
         self.sampler_reader.is_past_end(pos)
+    }
+
+    fn signal_release(&mut self) {
+        self.sampler_reader.signal_release();
     }
 }

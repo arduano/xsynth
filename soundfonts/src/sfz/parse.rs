@@ -2,24 +2,19 @@ use std::{
     borrow::Cow,
     cell::RefCell,
     collections::HashMap,
-    fs,
+    fs::File,
+    io::{BufReader, Read},
     ops::RangeInclusive,
     path::{Path, PathBuf},
 };
 
-use crate::FilterType;
+use crate::{FilterType, LoopMode};
+use encoding_rs::UTF_8;
+use encoding_rs_io::DecodeReaderBytesBuilder;
 
 use super::grammar::{ErrorTolerantToken, Group, Opcode, Token, TokenKind};
 use regex_bnf::{FileLocation, ParseError};
 use thiserror::Error;
-
-#[derive(Debug, Clone)]
-pub enum SfzLoopMode {
-    NoLoop,
-    OneShot,
-    LoopContinuous,
-    LoopSustain,
-}
 
 #[derive(Debug, Clone)]
 pub enum SfzOpcode {
@@ -32,7 +27,10 @@ pub enum SfzOpcode {
     Volume(i16),
     Pan(i8),
     Sample(String),
-    LoopMode(SfzLoopMode),
+    LoopMode(LoopMode),
+    LoopStart(u32),
+    LoopEnd(u32),
+    Offset(u32),
     Cutoff(f32),
     FilVeltrack(i16),
     FilKeycenter(u8),
@@ -169,6 +167,12 @@ fn parse_i16_in_range(val: &str, range: RangeInclusive<i16>) -> Option<i16> {
         .map(|val: i16| val.clamp(*range.start(), *range.end()))
 }
 
+fn parse_u32_in_range(val: &str, range: RangeInclusive<u32>) -> Option<u32> {
+    val.parse()
+        .ok()
+        .map(|val: u32| val.clamp(*range.start(), *range.end()))
+}
+
 fn parse_float_in_range(val: &str, range: RangeInclusive<f32>) -> Option<f32> {
     val.parse()
         .ok()
@@ -191,12 +195,12 @@ fn parse_filter_kind(val: &str) -> Option<FilterType> {
     }
 }
 
-fn parse_loop_mode(val: &str) -> Option<SfzLoopMode> {
+fn parse_loop_mode(val: &str) -> Option<LoopMode> {
     match val {
-        "no_loop" => Some(SfzLoopMode::NoLoop),
-        "one_shot" => Some(SfzLoopMode::OneShot),
-        "loop_continuous" => Some(SfzLoopMode::LoopContinuous),
-        "loop_sustain" => Some(SfzLoopMode::LoopSustain),
+        "no_loop" => Some(LoopMode::NoLoop),
+        "one_shot" => Some(LoopMode::OneShot),
+        "loop_continuous" => Some(LoopMode::LoopContinuous),
+        "loop_sustain" => Some(LoopMode::LoopSustain),
         _ => None,
     }
 }
@@ -240,7 +244,10 @@ fn parse_sfz_opcode(
         "fil_keytrack" => parse_i16_in_range(val, 0..=1200).map(FilKeytrack),
         "fil_keycenter" => parse_key_number(val).map(FilKeycenter),
         "fil_type" => parse_filter_kind(val).map(FilterType),
-        "loop_mode" => parse_loop_mode(val).map(LoopMode),
+        "loop_mode" | "loopmode" => parse_loop_mode(val).map(LoopMode),
+        "loop_start" | "loopstart" => parse_u32_in_range(val, 0..=u32::MAX).map(LoopStart),
+        "loop_end" | "loopend" => parse_u32_in_range(val, 0..=u32::MAX).map(LoopEnd),
+        "offset" => parse_u32_in_range(val, 0..=u32::MAX).map(Offset),
         "default_path" => Some(DefaultPath(val.replace('\\', "/"))),
 
         "ampeg_delay" => parse_float_in_range(val, 0.0..=100.0)
@@ -330,8 +337,18 @@ fn parse_tokens_resolved_recursive(
     let file_path = file_path
         .canonicalize()
         .map_err(|_| SfzParseError::FailedToReadFile(file_path.to_owned()))?;
-    let file = fs::read_to_string(&file_path)
+
+    let f = File::open(&file_path)
         .map_err(|_| SfzParseError::FailedToReadFile(file_path.to_owned()))?;
+
+    let mut reader = BufReader::new(
+        DecodeReaderBytesBuilder::new()
+            .encoding(Some(UTF_8))
+            .build(f),
+    );
+    let mut file = String::new();
+
+    reader.read_to_string(&mut file).unwrap();
 
     // Unwrap here is safe because the path is confirmed to be a file (read above)
     // and therefore it will always have a parent folder. The path is also canonicalized.

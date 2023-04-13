@@ -6,6 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+encoding_rs = "0.8.32"
+encoding_rs_io = "0.1.7"
 lazy-regex = "2.3.0"
 regex-bnf = "0.1.2"
 simdeez = { git = "https://github.com/arduano/simdeez.git", rev = "86f8bf9" }

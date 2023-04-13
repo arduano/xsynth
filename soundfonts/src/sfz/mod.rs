@@ -5,11 +5,10 @@ use std::{
 };
 
 use self::parse::{
-    parse_tokens_resolved, SfzAmpegEnvelope, SfzGroupType, SfzLoopMode, SfzOpcode, SfzParseError,
-    SfzToken,
+    parse_tokens_resolved, SfzAmpegEnvelope, SfzGroupType, SfzOpcode, SfzParseError, SfzToken,
 };
 
-use crate::FilterType;
+use crate::{FilterType, LoopMode};
 
 pub mod grammar;
 pub mod parse;
@@ -64,7 +63,10 @@ pub struct RegionParamsBuilder {
     pan: i8,
     sample: Option<String>,
     default_path: Option<String>,
-    loop_mode: SfzLoopMode,
+    loop_mode: LoopMode,
+    loop_start: u32,
+    loop_end: u32,
+    offset: u32,
     cutoff: Option<f32>,
     fil_veltrack: i16,
     fil_keycenter: u8,
@@ -85,7 +87,10 @@ impl Default for RegionParamsBuilder {
             pan: 0,
             sample: None,
             default_path: None,
-            loop_mode: SfzLoopMode::NoLoop,
+            loop_mode: LoopMode::NoLoop,
+            loop_start: 0,
+            loop_end: 0,
+            offset: 0,
             cutoff: None,
             fil_veltrack: 0,
             fil_keycenter: 60,
@@ -113,6 +118,9 @@ impl RegionParamsBuilder {
             SfzOpcode::Volume(val) => self.volume = val,
             SfzOpcode::Sample(val) => self.sample = Some(val),
             SfzOpcode::LoopMode(val) => self.loop_mode = val,
+            SfzOpcode::LoopStart(val) => self.loop_start = val,
+            SfzOpcode::LoopEnd(val) => self.loop_end = val,
+            SfzOpcode::Offset(val) => self.offset = val,
             SfzOpcode::Cutoff(val) => self.cutoff = Some(val),
             SfzOpcode::FilVeltrack(val) => self.fil_veltrack = val,
             SfzOpcode::FilKeytrack(val) => self.fil_keytrack = val,
@@ -144,6 +152,9 @@ impl RegionParamsBuilder {
             pan: self.pan,
             sample_path,
             loop_mode: self.loop_mode,
+            loop_start: self.loop_start,
+            loop_end: self.loop_end,
+            offset: self.offset,
             cutoff: self.cutoff,
             fil_veltrack: self.fil_veltrack.clamp(-9600, 9600),
             fil_keycenter: self.fil_keycenter,
@@ -162,7 +173,10 @@ pub struct RegionParams {
     pub volume: i16,
     pub pan: i8,
     pub sample_path: PathBuf,
-    pub loop_mode: SfzLoopMode,
+    pub loop_mode: LoopMode,
+    pub loop_start: u32,
+    pub loop_end: u32,
+    pub offset: u32,
     pub cutoff: Option<f32>,
     pub fil_veltrack: i16,
     pub fil_keycenter: u8,

@@ -3,15 +3,15 @@ use std::marker::PhantomData;
 use simdeez::prelude::*;
 use simdeez::Simd;
 
-use super::{BufferSampler, SIMDSampleGrabber, SampleReader};
+use super::{SIMDSampleGrabber, SampleReader};
 
-pub struct SIMDNearestSampleGrabber<S: Simd, Sampler: BufferSampler> {
-    sampler_reader: SampleReader<Sampler>,
+pub struct SIMDNearestSampleGrabber<S: Simd, Reader: SampleReader> {
+    sampler_reader: Reader,
     _s: PhantomData<S>,
 }
 
-impl<S: Simd, Sampler: BufferSampler> SIMDNearestSampleGrabber<S, Sampler> {
-    pub fn new(sampler_reader: SampleReader<Sampler>) -> Self {
+impl<S: Simd, Reader: SampleReader> SIMDNearestSampleGrabber<S, Reader> {
+    pub fn new(sampler_reader: Reader) -> Self {
         SIMDNearestSampleGrabber {
             sampler_reader,
             _s: PhantomData,
@@ -19,10 +19,8 @@ impl<S: Simd, Sampler: BufferSampler> SIMDNearestSampleGrabber<S, Sampler> {
     }
 }
 
-impl<S: Simd, Sampler: BufferSampler> SIMDSampleGrabber<S>
-    for SIMDNearestSampleGrabber<S, Sampler>
-{
-    fn get(&self, indexes: S::Vi32, _: S::Vf32) -> S::Vf32 {
+impl<S: Simd, Reader: SampleReader> SIMDSampleGrabber<S> for SIMDNearestSampleGrabber<S, Reader> {
+    fn get(&mut self, indexes: S::Vi32, _: S::Vf32) -> S::Vf32 {
         simd_invoke!(S, unsafe {
             let mut values = S::Vf32::zeroes();
 
@@ -38,5 +36,9 @@ impl<S: Simd, Sampler: BufferSampler> SIMDSampleGrabber<S>
     fn is_past_end(&self, pos: f64) -> bool {
         let pos = pos as usize;
         self.sampler_reader.is_past_end(pos)
+    }
+
+    fn signal_release(&mut self) {
+        self.sampler_reader.signal_release();
     }
 }

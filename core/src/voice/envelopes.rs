@@ -344,6 +344,7 @@ struct VoiceEnvelopeState<T: Simd> {
 pub struct SIMDVoiceEnvelope<T: Simd> {
     original_params: EnvelopeParameters,
     params: EnvelopeParameters,
+    allow_release: bool,
     state: VoiceEnvelopeState<T>,
     sample_rate: f32,
     killed: bool,
@@ -353,6 +354,7 @@ impl<T: Simd> SIMDVoiceEnvelope<T> {
     pub fn new(
         original_params: EnvelopeParameters,
         params: EnvelopeParameters,
+        allow_release: bool,
         sample_rate: f32,
     ) -> Self {
         let state = params.get_stage_data(EnvelopeStage::Delay, params.start);
@@ -360,6 +362,7 @@ impl<T: Simd> SIMDVoiceEnvelope<T> {
         SIMDVoiceEnvelope {
             original_params,
             params,
+            allow_release,
             state,
             sample_rate,
             killed: false,
@@ -490,8 +493,10 @@ impl<T: Simd> VoiceGeneratorBase for SIMDVoiceEnvelope<T> {
             self.update_stage();
             self.killed = true;
         }
-        let amp = self.get_value_at_current_time();
-        self.state = self.params.get_stage_data(EnvelopeStage::Release, amp);
+        if self.allow_release || self.killed {
+            let amp = self.get_value_at_current_time();
+            self.state = self.params.get_stage_data(EnvelopeStage::Release, amp);
+        }
     }
 
     #[inline(always)]
@@ -688,7 +693,7 @@ mod tests {
                 };
                 let params = descriptor.to_envelope_params(1, Default::default());
 
-                let mut env = SIMDVoiceEnvelope::<S>::new(params, params, 1.0);
+                let mut env = SIMDVoiceEnvelope::<S>::new(params, params, true, 1.0);
 
                 let mut i = 0;
                 while i < 48 {
