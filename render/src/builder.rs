@@ -5,7 +5,7 @@ use crate::{
 
 use std::sync::Arc;
 
-use core::{
+use xsynth_core::{
     channel::{ChannelAudioEvent, ChannelConfigEvent, ControlEvent},
     channel_group::SynthEvent,
     soundfont::{LoadSfzError, SoundfontBase},

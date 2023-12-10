@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use core::{
+use xsynth_core::{
     channel::ChannelConfigEvent,
     soundfont::{SampleSoundfont, SoundfontBase},
 };

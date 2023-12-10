@@ -8,7 +8,7 @@ use std::{
 
 use crossbeam_channel::Sender;
 
-use core::channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent};
+use xsynth_core::channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent};
 
 use crate::{util::ReadWriteAtomicU64, SynthEvent};
 
