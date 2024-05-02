@@ -1,4 +1,4 @@
-use core::{channel::ChannelInitOptions, soundfont::SoundfontInitOptions};
+use xsynth_core::{channel::ChannelInitOptions, soundfont::SoundfontInitOptions};
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum XSynthRenderAudioFormat {

@@ -1,7 +1,7 @@
 pub mod config;
 mod util;
 
-pub use core::channel_group::SynthEvent;
+pub use xsynth_core::channel_group::SynthEvent;
 
 mod realtime_synth;
 pub use realtime_synth::*;

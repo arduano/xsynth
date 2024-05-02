@@ -15,7 +15,7 @@ rayon = "1.5.3"
 spin_sleep = "1.0.0"
 to_vec = "0.1.0"
 wav = "1.0.0"
-core = { path = "../core", package = "xsynth-core" }
+xsynth-core = { path = "../core" }
 
 [dev-dependencies]
 midi-toolkit-rs = { git = "https://github.com/arduano/midi-toolkit-rs.git", rev = "a54f198" }

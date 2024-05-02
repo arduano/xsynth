@@ -1,4 +1,4 @@
-use core::{
+use xsynth_core::{
     channel_group::{ChannelGroup, ChannelGroupConfig, SynthEvent},
     effects::VolumeLimiter,
     AudioPipe, AudioStreamParams,
