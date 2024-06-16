@@ -8,7 +8,7 @@ use std::sync::Arc;
 use core::{
     channel::{ChannelAudioEvent, ChannelConfigEvent, ControlEvent},
     channel_group::SynthEvent,
-    soundfont::{LoadSfzError, SoundfontBase},
+    soundfont::{LoadSfError, SoundfontBase},
 };
 
 use thiserror::Error;
@@ -31,8 +31,8 @@ pub struct XSynthRenderStats {
 
 #[derive(Debug, Error)]
 pub enum XSynthRenderError {
-    #[error("SFZ loading failed")]
-    SfzLoadingFailed(#[from] LoadSfzError),
+    #[error("SF loading failed")]
+    SfLoadingFailed(#[from] LoadSfError),
 
     #[error("MIDI loading failed")]
     MidiLoadingFailed(MIDILoadError),

@@ -6,11 +6,9 @@ use symphonia::core::{audio::AudioBufferRef, meta::MetadataOptions};
 use symphonia::core::{audio::Signal, io::MediaSourceStream};
 use symphonia::core::{codecs::DecoderOptions, errors::Error};
 
-use self::resample::SincResampler;
 use crate::{AudioStreamParams, ChannelCount};
+use soundfonts::resample::resample_vecs;
 use thiserror::Error;
-
-pub mod resample;
 
 #[derive(Debug, Error)]
 pub enum AudioLoadError {
@@ -25,14 +23,6 @@ pub enum AudioLoadError {
 
     #[error("Audio file {0} has no tracks")]
     NoTracks(PathBuf),
-}
-
-fn resample_vecs(vecs: Vec<Vec<f32>>, sample_rate: f32, new_sample_rate: f32) -> Arc<[Arc<[f32]>]> {
-    let resampler = SincResampler::new(10000, sample_rate, 32);
-
-    vecs.into_iter()
-        .map(|samples| resampler.resample_vec(&samples, new_sample_rate).into())
-        .collect()
 }
 
 type ProcessedSample = (Arc<[Arc<[f32]>]>, u32);

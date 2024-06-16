@@ -21,10 +21,10 @@ fn main() {
             .or_else(|| std::env::var("XSYNTH_EXAMPLE_MIDI").ok()),
         args.get(2)
             .cloned()
-            .or_else(|| std::env::var("XSYNTH_EXAMPLE_SFZ").ok()),
+            .or_else(|| std::env::var("XSYNTH_EXAMPLE_SF").ok()),
     ) else {
         println!(
-            "Usage: {} [midi] [sfz]",
+            "Usage: {} [midi] [sfz/sf2]",
             std::env::current_exe()
                 .unwrap_or("example".into())
                 .display()

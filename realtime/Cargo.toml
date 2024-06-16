@@ -18,7 +18,7 @@ wav = "1.0.0"
 core = { path = "../core", package = "xsynth-core" }
 
 [dev-dependencies]
-midi-toolkit-rs = { git = "https://github.com/arduano/midi-toolkit-rs.git", rev = "a54f198" }
+midi-toolkit-rs = { git = "https://github.com/arduano/midi-toolkit-rs.git", rev = "26747a3" }
 gen-iter = { git = "https://github.com/arduano/gen-iter.git", rev = "64e28bc" }
 
 [build-dependencies]

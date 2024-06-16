@@ -98,7 +98,7 @@ struct ControlEventData {
 }
 
 impl ControlEventData {
-    pub fn new_defaults(sample_rate: u32) -> Self {
+    pub fn new_defaults(sample_rate: u32, drums_only: bool) -> Self {
         ControlEventData {
             selected_lsb: -1,
             selected_msb: -1,
@@ -116,7 +116,7 @@ impl ControlEventData {
             resonance: None,
             expression: ValueLerp::new(1.0, sample_rate),
             preset: 0,
-            bank: 0,
+            bank: if drums_only { 128 } else { 0 },
         }
     }
 }
@@ -173,11 +173,6 @@ impl VoiceChannel {
         let params = VoiceChannelParams::new(stream_params);
         let shared_voice_counter = params.stats.voice_counter.clone();
 
-        let mut control_event_data = ControlEventData::new_defaults(stream_params.sample_rate);
-        if options.drums_only {
-            control_event_data.bank = 128;
-        }
-
         VoiceChannel {
             params,
             key_voices: fill_key_array(|i| Key::new(i, shared_voice_counter.clone(), options)),
@@ -187,7 +182,10 @@ impl VoiceChannel {
             stream_params,
             options,
 
-            control_event_data,
+            control_event_data: ControlEventData::new_defaults(
+                stream_params.sample_rate,
+                options.drums_only,
+            ),
             voice_control_data: VoiceControlData::new_defaults(),
 
             cutoff: MultiChannelBiQuad::new(
@@ -549,8 +547,10 @@ impl VoiceChannel {
     }
 
     fn reset_control(&mut self) {
-        self.control_event_data = ControlEventData::new_defaults(self.stream_params.sample_rate);
+        self.control_event_data =
+            ControlEventData::new_defaults(self.stream_params.sample_rate, self.options.drums_only);
         self.voice_control_data = VoiceControlData::new_defaults();
+        self.process_event(ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(0)));
         self.propagate_voice_controls();
 
         self.control_event_data.cutoff = None;

@@ -143,7 +143,9 @@ impl VoiceBuffer {
         }
 
         if let Some(max_voices) = max_voices {
-            if self.options.fade_out_killing {
+            if self.buffer.iter().filter(|v| v.id == id).count() > max_voices {
+                self.pop_quietest_voice_group(id);
+            } else if self.options.fade_out_killing {
                 while self.get_active_count() > max_voices {
                     self.pop_quietest_voice_group(id);
                 }

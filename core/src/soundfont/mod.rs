@@ -8,7 +8,10 @@ use std::{
 
 use biquad::Q_BUTTERWORTH_F32;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use soundfonts::sfz::{parse::SfzParseError, RegionParams};
+use soundfonts::{
+    sf2::Sf2ParseError,
+    sfz::{parse::SfzParseError, AmpegEnvelopeParams, RegionParams},
+};
 use thiserror::Error;
 
 use self::audio::{load_audio_file, AudioLoadError};
@@ -23,7 +26,7 @@ use crate::{
     AudioStreamParams, ChannelCount,
 };
 
-use soundfonts::{FilterType, LoopMode};
+use soundfonts::{convert_sample_index, FilterType, LoopMode};
 
 pub mod audio;
 mod voice_spawners;
@@ -140,8 +143,10 @@ fn sample_cache_from_region_params(region_params: &RegionParams) -> SampleCache 
     SampleCache::new(region_params.sample_path.clone())
 }
 
-fn envelope_descriptor_from_region_params(region_params: &RegionParams) -> EnvelopeDescriptor {
-    let env = &region_params.ampeg_envelope;
+fn envelope_descriptor_from_region_params(
+    region_params: &AmpegEnvelopeParams,
+) -> EnvelopeDescriptor {
+    let env = region_params;
     EnvelopeDescriptor {
         start_percent: env.ampeg_start / 100.0,
         delay: env.ampeg_delay,
@@ -165,12 +170,41 @@ pub enum LoadSfzError {
     SfzParseError(#[from] SfzParseError),
 }
 
-fn convert_sample_index(idx: u32, old_sample_rate: u32, new_sample_rate: u32) -> u32 {
-    (new_sample_rate as f32 * idx as f32 / old_sample_rate as f32).round() as u32
+#[derive(Debug, Error)]
+pub enum LoadSfError {
+    #[error("Error loading the SFZ: {0}")]
+    LoadSfzError(#[from] LoadSfzError),
+
+    #[error("Error loading the SF2: {0}")]
+    LoadSf2Error(#[from] Sf2ParseError),
+
+    #[error("Unsupported format")]
+    Unsupported,
 }
 
 impl SampleSoundfont {
     pub fn new(
+        path: impl Into<PathBuf>,
+        stream_params: AudioStreamParams,
+        options: SoundfontInitOptions,
+    ) -> Result<Self, LoadSfError> {
+        let path: PathBuf = path.into();
+        if let Some(ext) = path.extension() {
+            match ext.to_str().unwrap_or("").to_lowercase().as_str() {
+                "sfz" => {
+                    Self::new_sfz(path, stream_params, options).map_err(LoadSfError::LoadSfzError)
+                }
+                "sf2" => {
+                    Self::new_sf2(path, stream_params, options).map_err(LoadSfError::LoadSf2Error)
+                }
+                _ => Err(LoadSfError::Unsupported),
+            }
+        } else {
+            Err(LoadSfError::Unsupported)
+        }
+    }
+
+    pub fn new_sfz(
         sfz_path: impl Into<PathBuf>,
         stream_params: AudioStreamParams,
         options: SoundfontInitOptions,
@@ -197,7 +231,8 @@ impl SampleSoundfont {
         let mut unique_envelope_params =
             Vec::<(EnvelopeDescriptor, Arc<EnvelopeParameters>)>::new();
         for region in regions.iter() {
-            let envelope_descriptor = envelope_descriptor_from_region_params(region);
+            let envelope_descriptor =
+                envelope_descriptor_from_region_params(&region.ampeg_envelope);
             let exists = unique_envelope_params
                 .iter()
                 .any(|e| e.0 == envelope_descriptor);
@@ -220,7 +255,7 @@ impl SampleSoundfont {
         // Write region params
         for region in regions {
             let params = sample_cache_from_region_params(&region);
-            let envelope = envelope_descriptor_from_region_params(&region);
+            let envelope = envelope_descriptor_from_region_params(&region.ampeg_envelope);
 
             // Key value -1 is used for CC triggered regions which are not supported by XSynth
             if region.keyrange.contains(&-1) {
@@ -263,7 +298,11 @@ impl SampleSoundfont {
                     let sample_rate = samples[&params].1;
 
                     let loop_params = LoopParams {
-                        mode: region.loop_mode,
+                        mode: if region.loop_start == region.loop_end {
+                            LoopMode::NoLoop
+                        } else {
+                            region.loop_mode
+                        },
                         offset: convert_sample_index(
                             region.offset,
                             sample_rate,
@@ -311,6 +350,111 @@ impl SampleSoundfont {
                 preset: options.preset.unwrap_or(0),
                 spawner_params_list,
             }],
+            stream_params,
+        })
+    }
+
+    pub fn new_sf2(
+        sf2_path: impl Into<PathBuf>,
+        stream_params: AudioStreamParams,
+        options: SoundfontInitOptions,
+    ) -> Result<Self, Sf2ParseError> {
+        let presets = soundfonts::sf2::load_soundfont(sf2_path.into(), stream_params.sample_rate)?;
+
+        let mut instruments = Vec::new();
+
+        for preset in presets {
+            if let Some(bank) = options.bank {
+                if bank != preset.bank as u8 {
+                    continue;
+                }
+            }
+            if let Some(presetn) = options.preset {
+                if presetn != preset.preset as u8 {
+                    continue;
+                }
+            }
+
+            let mut spawner_params_list = Vec::<Vec<Arc<SampleVoiceSpawnerParams>>>::new();
+            for _ in 0..(128 * 128) {
+                spawner_params_list.push(Vec::new());
+            }
+
+            for region in preset.regions {
+                let envelope_params = Arc::new(
+                    envelope_descriptor_from_region_params(&region.ampeg_envelope)
+                        .to_envelope_params(stream_params.sample_rate, options),
+                );
+
+                for key in region.keyrange.clone() {
+                    for vel in region.velrange.clone() {
+                        let index = key_vel_to_index(key, vel);
+                        let speed_mult = get_speed_mult_from_keys(key, region.root_key)
+                            * cents_factor(
+                                region.fine_tune as f32 + region.coarse_tune as f32 * 100.0,
+                            );
+
+                        let mut cutoff = None;
+                        if options.use_effects {
+                            if let Some(cutoff_t) = region.cutoff {
+                                if cutoff_t >= 1.0 {
+                                    cutoff = Some(cutoff_t.clamp(
+                                        1.0,
+                                        stream_params.sample_rate as f32 / 2.0 - 100.0,
+                                    ));
+                                }
+                            }
+                        }
+
+                        let pan = ((region.pan as f32 / 500.0) + 1.0) / 2.0;
+
+                        let loop_params = LoopParams {
+                            mode: if region.loop_start == region.loop_end {
+                                LoopMode::NoLoop
+                            } else {
+                                region.loop_mode
+                            },
+                            offset: region.offset,
+                            start: region.loop_start,
+                            end: region.loop_end,
+                        };
+
+                        let mut region_samples = region.sample.clone();
+                        if stream_params.channels == ChannelCount::Stereo
+                            && region_samples.len() == 1
+                        {
+                            region_samples =
+                                Arc::new([region_samples[0].clone(), region_samples[0].clone()]);
+                        }
+
+                        let spawner_params = Arc::new(SampleVoiceSpawnerParams {
+                            pan,
+                            volume: region.volume,
+                            envelope: envelope_params.clone(),
+                            speed_mult,
+                            cutoff,
+                            resonance: db_to_amp(region.resonance) * Q_BUTTERWORTH_F32,
+                            filter_type: FilterType::LowPass,
+                            interpolator: options.interpolator,
+                            loop_params,
+                            sample: region_samples,
+                        });
+
+                        spawner_params_list[index].push(spawner_params.clone());
+                    }
+                }
+            }
+
+            let new = SoundfontInstrument {
+                bank: preset.bank as u8,
+                preset: preset.preset as u8,
+                spawner_params_list,
+            };
+            instruments.push(new);
+        }
+
+        Ok(SampleSoundfont {
+            instruments,
             stream_params,
         })
     }

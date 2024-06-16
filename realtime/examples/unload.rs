@@ -17,10 +17,10 @@ fn main() {
     let Some(sfz) = args
         .get(1)
         .cloned()
-        .or_else(|| std::env::var("XSYNTH_EXAMPLE_SFZ").ok())
+        .or_else(|| std::env::var("XSYNTH_EXAMPLE_SF").ok())
     else {
         println!(
-            "Usage: {} [sfz]",
+            "Usage: {} [sfz/sf2]",
             std::env::current_exe()
                 .unwrap_or("example".into())
                 .display()

@@ -10,8 +10,8 @@ use super::voice_spawner::VoiceSpawnerMatrix;
 pub struct ChannelSoundfont {
     soundfonts: Vec<Arc<dyn SoundfontBase>>,
     matrix: VoiceSpawnerMatrix,
-    curr_bank: Option<u8>,
-    curr_preset: Option<u8>,
+    curr_bank: u8,
+    curr_preset: u8,
 }
 
 impl Deref for ChannelSoundfont {
@@ -28,58 +28,73 @@ impl ChannelSoundfont {
         ChannelSoundfont {
             soundfonts: Vec::new(),
             matrix: VoiceSpawnerMatrix::new(),
-            curr_bank: None,
-            curr_preset: None,
+            curr_bank: 0,
+            curr_preset: 0,
         }
     }
 
     pub fn set_soundfonts(&mut self, soundfonts: Vec<Arc<dyn SoundfontBase>>) {
         self.soundfonts = soundfonts;
-        self.curr_bank = None;
-        self.curr_preset = None;
-        self.rebuild_matrix(0, 0);
+        self.rebuild_matrix(self.curr_bank, self.curr_preset, true);
     }
 
     pub fn change_program(&mut self, bank: u8, preset: u8) {
-        self.rebuild_matrix(bank, preset);
+        self.rebuild_matrix(bank, preset, false);
     }
 
-    fn rebuild_matrix(&mut self, bank: u8, preset: u8) {
-        if self.curr_bank == Some(bank) && self.curr_preset == Some(preset) {
+    fn rebuild_matrix(&mut self, bank: u8, preset: u8, force_rebuild: bool) {
+        if self.curr_bank == bank && self.curr_preset == preset && !force_rebuild {
             return;
         }
 
+        // If a preset/instr. is missing from all banks it will be muted,
+        // if a preset/instr. has regions in bank 0, all missing banks will be replaced by 0,
+        // if a preset/instr. has regions in any bank other than 0, all missing banks will be muted.
+        // For drum patches the same applies with bank and preset switched.
+
         for k in 0..128u8 {
             for v in 0..128u8 {
-                // The fallback piano finder in case no other instrument is found
-                let find_piano_attack = || {
-                    self.soundfonts
-                        .iter()
-                        .map(|sf| sf.get_attack_voice_spawners_at(0, 0, k, v))
-                        .find(|vec| !vec.is_empty())
+                let find_replacement_attack = || {
+                    if bank == 128 {
+                        self.soundfonts
+                            .iter()
+                            .map(|sf| sf.get_attack_voice_spawners_at(bank, 0, k, v))
+                            .find(|vec| !vec.is_empty())
+                    } else {
+                        self.soundfonts
+                            .iter()
+                            .map(|sf| sf.get_attack_voice_spawners_at(0, preset, k, v))
+                            .find(|vec| !vec.is_empty())
+                    }
                 };
 
                 let attack_spawners = self
                     .soundfonts
                     .iter()
                     .map(|sf| sf.get_attack_voice_spawners_at(bank, preset, k, v))
-                    .chain(iter::once_with(find_piano_attack).flatten())
+                    .chain(iter::once_with(find_replacement_attack).flatten())
                     .find(|vec| !vec.is_empty())
                     .unwrap_or_default();
 
-                // The fallback piano finder in case no other instrument is found
-                let find_piano_release = || {
-                    self.soundfonts
-                        .iter()
-                        .map(|sf| sf.get_release_voice_spawners_at(0, 0, k, v))
-                        .find(|vec| !vec.is_empty())
+                let find_replacement_release = || {
+                    if bank == 128 {
+                        self.soundfonts
+                            .iter()
+                            .map(|sf| sf.get_release_voice_spawners_at(bank, 0, k, v))
+                            .find(|vec| !vec.is_empty())
+                    } else {
+                        self.soundfonts
+                            .iter()
+                            .map(|sf| sf.get_release_voice_spawners_at(0, preset, k, v))
+                            .find(|vec| !vec.is_empty())
+                    }
                 };
 
                 let release_spawners = self
                     .soundfonts
                     .iter()
                     .map(|sf| sf.get_release_voice_spawners_at(bank, preset, k, v))
-                    .chain(iter::once_with(find_piano_release).flatten())
+                    .chain(iter::once_with(find_replacement_release).flatten())
                     .find(|vec| !vec.is_empty())
                     .unwrap_or_default();
 
@@ -88,8 +103,8 @@ impl ChannelSoundfont {
             }
         }
 
-        self.curr_bank = Some(bank);
-        self.curr_preset = Some(preset);
+        self.curr_bank = bank;
+        self.curr_preset = preset;
     }
 
     pub fn spawn_voices_attack<'a>(

@@ -24,7 +24,7 @@ use atomic_float::AtomicF64;
 fn main() {
     println!("--- FILE PATHS ---");
     let midi_path = read_input("Enter MIDI path");
-    let sfz_path = read_input("Enter SFZ path");
+    let sf_path = read_input("Enter SFZ/SF2 path");
     let out_path = read_input("Enter output path");
 
     println!("\n--- RENDER OPTIONS ---");
@@ -80,7 +80,7 @@ fn main() {
 
     let soundfonts: Vec<Arc<dyn SoundfontBase>> = vec![Arc::new(
         SampleSoundfont::new(
-            sfz_path,
+            sf_path,
             AudioStreamParams::new(sample_rate, ChannelCount::from(2)),
             config.sf_init_options,
         )

@@ -27,10 +27,10 @@ fn main() {
             .or_else(|| std::env::var("XSYNTH_EXAMPLE_MIDI").ok()),
         args.get(2)
             .cloned()
-            .or_else(|| std::env::var("XSYNTH_EXAMPLE_SFZ").ok()),
+            .or_else(|| std::env::var("XSYNTH_EXAMPLE_SF").ok()),
     ) else {
         println!(
-            "Usage: {} [midi] [sfz]",
+            "Usage: {} [midi] [sfz/sf2]",
             std::env::current_exe()
                 .unwrap_or("example".into())
                 .display()
@@ -54,7 +54,7 @@ fn main() {
     let stats = synth.get_stats();
     thread::spawn(move || loop {
         println!(
-            "Voice Count: {}  \tBuffer: {}\tRender time: {}",
+            "Voice Count: {}\tBuffer: {}\tRender time: {}",
             stats.voice_count(),
             stats.buffer().last_samples_after_read(),
             stats.buffer().average_renderer_load()
