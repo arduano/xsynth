@@ -25,24 +25,32 @@ impl Sf2Sample {
         sample_rate: u32,
     ) -> Result<Vec<Self>, Sf2ParseError> {
         let smpl = if let Some(data) = data.smpl {
-            data.read_contents(file)
-                .map_err(|_| Sf2ParseError::FailedToParseFile)?
+            data.read_contents(file).map_err(|_| {
+                Sf2ParseError::FailedToParseFile("Error reading sample contents".to_string())
+            })?
         } else {
-            return Err(Sf2ParseError::FailedToParseFile);
+            return Err(Sf2ParseError::FailedToParseFile(
+                "Soundfont does not contain samples".to_string(),
+            ));
         };
 
         let mut samples = Vec::new();
 
         if let Some(sm24) = data.sm24 {
             // SF2 is 24-bit
-            let extra = sm24
-                .read_contents(file)
-                .map_err(|_| Sf2ParseError::FailedToParseFile)?;
-            if smpl.len() / 2 != extra.len() {
-                return Err(Sf2ParseError::FailedToParseFile);
+            let extra = sm24.read_contents(file).map_err(|_| {
+                Sf2ParseError::FailedToParseFile("Error reading extra sample contents".to_string())
+            })?;
+
+            let smpllen = smpl.len() / 2;
+            let extralen = extra.len() - (smpllen % 2);
+            if smpllen != extralen {
+                return Err(Sf2ParseError::FailedToParseFile(
+                    "Invalid sample length".to_string(),
+                ));
             }
 
-            for i in 0..extra.len() {
+            for i in 0..extralen {
                 let n0 = 0;
                 let n1 = extra[i];
                 let n2 = smpl[i * 2];

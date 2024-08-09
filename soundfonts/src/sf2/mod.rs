@@ -15,11 +15,11 @@ pub enum Sf2ParseError {
     FailedToReadFile(PathBuf),
 
     #[error("Failed to parse file")]
-    FailedToParseFile,
+    FailedToParseFile(String),
 }
 
 /// Structure that holds the generator and modulator parameters of an SF2 region.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Sf2Region {
     pub sample: Arc<[Arc<[f32]>]>,
     pub sample_rate: u32,
@@ -40,6 +40,7 @@ pub struct Sf2Region {
 }
 
 /// Structure that holds the parameters of an SF2 preset.
+#[derive(Clone, Debug)]
 pub struct Sf2Preset {
     pub bank: u16,
     pub preset: u16,
@@ -59,7 +60,7 @@ pub fn load_soundfont(
         .map_err(|_| Sf2ParseError::FailedToReadFile(sf2_path.clone()))?;
     let file = &mut file;
     let sf2 = soundfont::SoundFont2::load(file)
-        .map_err(|_| Sf2ParseError::FailedToParseFile)?
+        .map_err(|e| Sf2ParseError::FailedToParseFile(format!("{:#?}", e)))?
         .sort_presets();
 
     let sample_data = sample::Sf2Sample::parse_sf2_samples(

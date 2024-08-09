@@ -19,5 +19,5 @@ lazy-regex = "3.2.0"
 regex-bnf = "0.1.2"
 simdeez = "2.0.0-dev3"
 thiserror = "1.0.63"
-soundfont = "0.0.3"
+soundfont = { git = "https://github.com/PolyMeilex/OxiSynth", tag = "0.0.5" }
 rubato = "0.15.0"

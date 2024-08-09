@@ -1272,8 +1272,7 @@ dependencies = [
 [[package]]
 name = "soundfont"
 version = "0.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88f3c4ee9be1386dc5d4f33fb1df6f813eb2f49510cb24e8bfd30784f4853fce"
+source = "git+https://github.com/PolyMeilex/OxiSynth?tag=0.0.5#c2e95ab7156f0be617b0aa960ab3d049c84b2530"
 dependencies = [
  "riff",
 ]
